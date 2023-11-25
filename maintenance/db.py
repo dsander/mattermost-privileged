@@ -456,7 +456,7 @@ print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} corrected joins 'as 
 # TODO? Unknown use of said table -> wait for next thread release phase?
 
 # FIX: recalculate postcount to exclude deleted posts in threads table - migration issue of old threads. github: https://github.com/mattermost/mattermost-server/issues/16321
-cur.execute("""UPDATE threads SET replycount = a.cnt FROM (SELECT rootid, count(*) cnt, max(createat) ts FROM posts GROUP BY 1) AS a WHERE threads.postid = a.rootid AND replycount <> a.cnt RETURNING *""")
+cur.execute("""UPDATE threads SET replycount = a.cnt FROM (SELECT rootid, count(*) cnt, max(createat) ts FROM posts WHERE deleteat = 0 or deleteat = NULL GROUP BY 1) AS a WHERE threads.postid = a.rootid AND replycount <> a.cnt RETURNING *""")
 print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} corrected threads replycount(s).")
 
 # remove "disable_group_highlight" prop from posts.
