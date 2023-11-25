@@ -14,7 +14,7 @@ import psycopg2.extras
 
 import config
 print("Mattermost FS cleanup script: https://git.somenet.org/pub/jan/mattermost-privileged.git")
-print("Tested on 9.1\n")
+print("Tested on 9.2\n")
 
 dbconn = psycopg2.connect(config.dbconnstring)
 dbconn.set_session(autocommit=False)
