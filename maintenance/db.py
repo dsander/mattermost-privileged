@@ -29,66 +29,6 @@ TS_START = time.time()
 print("Enforcing system policy ...")
 cur = dbconn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-# 31 days+ not active and not verified users (no recent status, no recent account update, no recent posts)
-cur.execute("""DELETE FROM users WHERE users.id IN
-            (SELECT users.id FROM users LEFT JOIN status ON (users.id = status.userid AND lastactivityat < extract(epoch from (NOW() - INTERVAL '31 day'))*1000)
-              WHERE emailverified = false AND users.updateat < extract(epoch from (NOW() - INTERVAL '31 day'))*1000 AND users.id NOT IN (SELECT distinct userid FROM posts WHERE createat > extract(epoch from (NOW() - INTERVAL '31 day'))*1000)
-            ) RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} deleted 31 days+ not verified account(s).")
-_ = [print(row, file=sys.stderr) for row in cur.fetchall()]
-
-
-## 91 days+ not active guest accounts (no recent status, no recent account update, no recent posts)
-cur.execute("""UPDATE posts SET userid = '"""+config.deleted_user_uid+"""' WHERE userid IN (SELECT id FROM (
-                SELECT users.id, users.username, users.email, status.status, status.manual, date_trunc('second',TO_TIMESTAMP(GREATEST(status.lastactivityat, MAX(sessions.lastactivityat), users.updateat)/1000)) as lastactivity
-                FROM users LEFT JOIN status ON (users.id = status.userid) LEFT JOIN sessions ON (users.id = sessions.userid)
-                WHERE users.roles like '%system_guest%' GROUP BY users.id, users.username, users.email, status.status, status.manual, status.lastactivityat, users.updateat ORDER BY lastactivity DESC
-            ) A where extract(epoch from lastactivity)*1000 < extract(epoch from (NOW() - INTERVAL '91 day'))*1000
-            ) RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} chowned 91 days+ not used guest-account(s) public post(s).")
-
-cur.execute("""DELETE FROM users WHERE id IN (SELECT id FROM (
-                SELECT users.id, users.username, users.email, status.status, status.manual, date_trunc('second',TO_TIMESTAMP(GREATEST(status.lastactivityat, MAX(sessions.lastactivityat), users.updateat)/1000)) as lastactivity
-                FROM users LEFT JOIN status ON (users.id = status.userid) LEFT JOIN sessions ON (users.id = sessions.userid)
-                WHERE users.roles like '%system_guest%' GROUP BY users.id, users.username, users.email, status.status, status.manual, status.lastactivityat, users.updateat ORDER BY lastactivity DESC
-            ) A where extract(epoch from lastactivity)*1000 < extract(epoch from (NOW() - INTERVAL '91 day'))*1000
-            ) RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} deleted 91 days+ not used guest-account(s).")
-_ = [print(row, file=sys.stderr) for row in cur.fetchall()]
-
-
-## 48 months+ not active accounts (no recent status, no recent account update, no recent posts)
-cur.execute("""UPDATE posts SET userid = '"""+config.deleted_user_uid+"""' WHERE userid IN (SELECT id FROM (
-                SELECT users.id, users.username, users.email, status.status, status.manual, date_trunc('second',TO_TIMESTAMP(GREATEST(status.lastactivityat, MAX(sessions.lastactivityat), users.updateat)/1000)) as lastactivity
-                FROM users LEFT JOIN status ON (users.id = status.userid) LEFT JOIN sessions ON (users.id = sessions.userid)
-                GROUP BY users.id, users.username, users.email, status.status, status.manual, status.lastactivityat, users.updateat ORDER BY lastactivity DESC
-            ) A where extract(epoch from lastactivity)*1000 < extract(epoch from (NOW() - INTERVAL '48 month'))*1000
-            ) RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} chowned 48 months+ not used account(s) public post(s).")
-
-cur.execute("""DELETE FROM users WHERE id IN (SELECT id FROM (
-                SELECT users.id, users.username, users.email, status.status, status.manual, date_trunc('second',TO_TIMESTAMP(GREATEST(status.lastactivityat, MAX(sessions.lastactivityat), users.updateat)/1000)) as lastactivity
-                FROM users LEFT JOIN status ON (users.id = status.userid) LEFT JOIN sessions ON (users.id = sessions.userid)
-                GROUP BY users.id, users.username, users.email, status.status, status.manual, status.lastactivityat, users.updateat ORDER BY lastactivity DESC
-            ) A where extract(epoch from lastactivity)*1000 < extract(epoch from (NOW() - INTERVAL '48 month'))*1000
-            ) RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} deleted 48 months+ not used account(s).")
-_ = [print(row, file=sys.stderr) for row in cur.fetchall()]
-
-
-## 91 days+ disabled accounts
-#cur.execute("""UPDATE posts SET userid = '"""+config.deleted_user_uid+"""' WHERE userid IN (SELECT id FROM users WHERE users.deleteat <> 0 AND deleteat < extract(epoch from (NOW() - INTERVAL '91 day'))*1000) RETURNING *""")
-#print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} chown 91 days+ disabled account(s) public post(s).")
-#
-#cur.execute("""DELETE FROM users WHERE users.deleteat <> 0 AND deleteat < extract(epoch from (NOW() - INTERVAL '91 day'))*1000 RETURNING *""")
-#print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} deleted 91 days+ disabled account(s).")
-#_ = [print(row, file=sys.stderr) for row in cur.fetchall()]
-
-
-# move channel-creatorship of deleted users to deleted_user
-cur.execute("""UPDATE channels SET creatorid = '"""+config.deleted_user_uid+"""' WHERE creatorid NOT IN (SELECT id FROM users) AND creatorid != '' RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} chowned channel-creatorship(s) of deleted users to deleted_user.")
-
 
 # 12 months inactive non-public one-user-channels (mostly DM-channels where the other user was deleted; they are inaccessible for the other user anyway)
 cur.execute("""DELETE FROM channels WHERE type IS DISTINCT FROM 'O' AND lastpostat < extract(epoch from (NOW() - INTERVAL '12 month'))*1000 AND updateat < extract(epoch from (NOW() - INTERVAL '12 month'))*1000 AND
@@ -98,17 +38,9 @@ print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} deleted 12 months+ i
 _ = [print(row, file=sys.stderr) for row in cur.fetchall()]
 
 
-# bot breaking channels in vowi team
-cur.execute("""DELETE FROM channels WHERE teamid = 'sswtb6oqciyyfmkibh6mjz479w' AND type = 'O' AND creatorid NOT IN ('5ugpycz1mfrj3ff4k6hbg6g37o', '') RETURNING *""")
-print(f"* [{(time.time() - TS_START):08.5f}] {cur.rowcount} deleted breaking channel(s).")
-_ = [print(row, file=sys.stderr) for row in cur.fetchall()]
 
 
 cur.close()
-if not hasattr(config, "enforce_system_policy") or hasattr(config, "enforce_system_policy") and not config.enforce_system_policy:
-    dbconn.rollback()
-    print("\n*** rollback - not enforcing system policy ***")
-print()
 
 
 

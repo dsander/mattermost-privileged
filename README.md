@@ -1,3 +1,35 @@
+# Taken from https://git.somenet.org/pub/jan/mattermost-privileged.git
+
+Added dockerfile to run the scripts on a dockerized mattermost instance
+
+Except from my `docker-compose.yml`
+
+```yaml
+    cleanup:
+      image: dsander/mattermost-cleanup
+      container_name: cleanup
+      depends_on:
+        - postgres-mattermost
+      networks:
+        - mattermost
+      volumes:
+        - "{{ appdata_path }}/mattermost/data:/mattermost/data:rw"
+      environment:
+        POSTGRES_HOST: postgres-mattermost
+        POSTGRES_USER: mattermost
+        POSTGRES_PASSWORD: mattermost
+        POSTGRES_DB: mattermost
+```
+
+Run with
+
+```
+docker compose run -it cleanup python3 -Bu db.py
+docker compose run -it cleanup python3 -Bu fs.py
+```
+
+
+
 # Someone's privileged Mattermost scripts.
 + Copyright (c) 2016-2022 by Someone <someone@somenet.org> (aka. Jan Vales <jan@jvales.net>)
 + published under MIT-License
